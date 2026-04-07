@@ -13,19 +13,22 @@ h1 {
 }
 
 /* 問1：文字の大きさ */
-.font-size p {
+.font-size 
+p {
     <!-- ここに記載 -->
 font-size : 40px;
 }
 
 /* 問2：文字の種類 */
-.font-family p {
+.font-family 
+p {
     <!-- ここに記載 -->
     font-family: selif;
 }
 
 /* 問3：背景色 */
-.background-color p {
+.background-color 
+p {
     <!-- ここに記載 -->
     background-color: #ffff00;
     
@@ -36,12 +39,13 @@ font-size : 40px;
     <!-- ここに記載 -->
     width: 400px;
      height: 100px;
+     .background-color : #808080;
 }
 
 /* 問5：その他プロパティ */
 .other-properties .box {
     <!-- ここに記載 -->
     margin: 20px;
-    padding: ;15px
-    box-sizing: border-box; 2px
+    padding: 15px;
+    box-sizing: border-box 2px;
 }
