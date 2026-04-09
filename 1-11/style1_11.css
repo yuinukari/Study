@@ -1,11 +1,9 @@
 /* 問1：タグ指定 */
 li {
-    <!-- ここに記載 -->
     color: red;
 }
 
 /* 問2：class指定 */
-<!-- ここに記載 -->
 .select {
     color: #0099ff;
 }
@@ -18,11 +16,9 @@ p{
 .note {
     color: green;
 }
-<!-- ここに記載 -->
 
 /* 問5：id指定 */
 #main {
     color: orange;
-    ont-weight: bold;
+    font-weight: bold;
 }
-<!-- ここに記載 -->
