@@ -1,0 +1,19 @@
+EXPLAIN の type 列が ALL になっています。これは何を意味しますか？またパフォーマンスにどのような影響がありますか？
+意味: フルテーブルスキャンを行っていることを意味する。インデックスが使われず、1,200,000件の全レコードを愚直に走査して条件に合うデータを探索している。
+影響: データ件数が多いため膨大なディスクI/OとCPU負荷が発生する。本番環境でリクエストが重なるとDBサーバーのハングアップやAPIタイムアウトの直接的な原因になる。
+
+possible_keys が NULL になっている理由を説明してください。
+理由: WHERE 句の検索条件に指定されている email 列に対して、検索を高速化するためのインデックスが一切作成されていないため。オプティマイザが利用可能なインデックスの候補が存在しないと判断したことを示している。
+
+このSQLを改善するための ALTER 文または CREATE INDEX 文を記述してください。
+[ALTER]
+ALTER TABLE members ADD UNIQUE INDEX idx_email (email);
+[CREATE INDEX]
+CREATE UNIQUE INDEX idx_email ON members (email);
+
+インデックス追加後、EXPLAIN の各列（type・possible_keys・key・rows・Extra）がどのように変わるかを予測してください。
+type: ALL から const に変化。プライマリキーまたはインデックスによる1件の等価検索であることを示す。
+possible_keys: NULL から idx_emailに変化し、利用候補として認識される。
+key: NULL から idx_email に変化し、実際にインデックスが適用されたことを示す。
+rows: 1200000 から 1 に激減。1件のレコードにピンポイントでアクセスしていることを意味する。
+Extra: Using where から、または状況により Using index などに最適化される。
