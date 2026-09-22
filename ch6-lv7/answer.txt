@@ -1,0 +1,15 @@
+現在の EXPLAIN で rows が 50,000 になっている理由を説明してください。
+現在存在するインデックスが customer_id 単体の idx_customer_id のみであるため。
+
+Using where が表示される原因は何ですか？ idx_customer_id だけではなぜ不十分なのかを説明してください。
+原因: インデックスだけで条件のすべてを処理できず、取得したデータに対してさらにサーバー側で残りの条件（status = '処理中'）をフィルタリング（判定）しているため。
+不十分な理由: idx_customer_id には status のデータが含まれていない。そのため、DBは一度インデックスから見つかった 50,000件分のデータを読み込み、1件ずつチェックするディスクI/Oおよび走査処理を発生させてしまうから。
+
+今回のクエリをさらに改善するための複合インデックスを設計し、ALTER 文または CREATE INDEX 文を記述してください。
+ALTER
+ALTER TABLE orders ADD INDEX idx_cust_status (customer_id, status);
+
+複合インデックスのカラム順序（customer_id → status の順）が重要な理由を説明してください。逆順（status → customer_id）にした場合との違いも含めて答えてください。
+カーディナリティ（選択性）の違い: customer_id は特定のIDで50,000件（1/100）まで一気に絞り込める高い選択性を持っている。一方、status は4種類しかなく、1種類あたり1,250,000件（1/4）と選択性が低い。
+順序による違い（customer_id → status の順）:まずは customer_id で50,000件に絞り込み、その中からさらに status で 12,500件（50,000 ÷ 4）へB-Treeインデックス上で絞り込むことができる。
+逆順（status → customer_id）にした場合：status = '処理中' の 1,250,000件 の中から customer_id = 2048 を探すことになる。また、もし別のクエリで customer_id 単体での検索（WHERE customer_id = X）が行われた場合、インデックスの先頭が status になっていると、そのインデックスを再利用して検索することができなくなる。そのため、customer_id を先頭にする。
