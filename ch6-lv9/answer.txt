@@ -1,0 +1,28 @@
+SQL-A の EXPLAIN で c（categories）の type が ALL、p（products）の type も ALL になっている理由をそれぞれ説明してください。
+c (categories) が ALL の理由:WHERE 句で c.name = '家電' という絞り込みを行っているが、name 列にインデックスが存在しないため。全80件とデータ量が少ないため致命的な遅延にはならないが、駆動表（最初にアクセスするテーブル）としてフルスキャンが発生している。
+p (products) が ALL の理由:結合キーである category_id や、絞り込み条件の price, is_active に対する単独・複合インデックスが一切存在しないため。そのため、categories から絞り込まれた結果と結合する際、毎回300,000件のフルテーブルスキャンが発生している。
+
+SQL-B の EXPLAIN で stocks の type が ALL になっている理由を説明してください。idx_warehouse が possible_keys にあるのに使われない理由も含めて説明してください。
+ALL になっている理由:WHERE 句の絞り込み条件である s.quantity < s.reorder_point（列同士の比較）に対応するインデックスが存在しないため。
+idx_warehouse が使われない理由:idx_warehouse は warehouse_id 列に対するインデックス。しかし、このクエリの WHERE 句には「特定の倉庫ID」で絞り込む条件（例: warehouse_id = 5）が一切含まれていない。オプティマイザは、倉庫を絞り込めないためこのインデックスを使用しても360万件を走査することになり、フルスキャン（ALL）した方が早いと判断して却下（key が NULL）している。
+
+SQL-A を改善するために追加すべきインデックスを提案し、DDLを記述してください。
+提案: categories には絞り込み用、products には「結合キー、絞り込み、ソート」をすべてカバーする複合インデックスを追加。
+-- categoriesのname列による高速絞り込み用
+CREATE INDEX idx_categories_name ON categories (name);
+
+-- productsの結合、範囲検索、is_active、ORDER BYをカバーする複合インデックス
+CREATE INDEX idx_products_category_price ON products (category_id, is_active, price);
+提案: stocks のボトルネックである「発注点割れ」を効率よく判定するために、quantity と product_id などの複合インデックスを検討。ただし、s.quantity < s.reorder_point のような列同士の比較式は通常のB-Treeインデックス単体では完全に最適化できない（ALLになりやすい）特性がある。最も効果的なアプローチは、結合キーである product_id を先頭にした複合インデックス、あるいは可能であれば stocks に (product_id, warehouse_id, quantity, reorder_point) を含めてインデックスだけで処理を完結させる（カバリングインデックス）こと。また、products には主キーがあるので stocks からの結合が eq_ref になるように促す。
+
+SQL-B を改善するために追加すべきインデックスを提案し、DDLを記述してください。
+-- stocksの結合および判定をインデックス内で完結させるためのカバリング複合インデックス
+CREATE INDEX idx_stocks_lookup ON stocks (product_id, warehouse_id, quantity, reorder_point);
+
+SQL-A と SQL-B の改善策における共通点と相違点を説明してください。
+共通点
+適切なインデックスの欠如によるフルスキャン（ALL）の解消どちらのSQLも、WHERE 句で絞り込みを行いたい主要なカラム（SQL-Aは c.name や p.price、SQL-Bは stocks の状態）にインデックスがないことが根本原因であり、これをインデックスの新規作成によってアクセスタイプを ref や range、eq_ref に向上させるアプローチは共通している。
+相違点
+インデックスによる最適化の難易度とアプローチの違い
+・SQL-A（定数/範囲の絞り込み）： name = '家電' や price BETWEEN X AND Y のような「定数との比較」であるため、複合インデックスを追加すれば劇的かつ確実に（type: range 等に）高速化できる。
+・SQL-B（列同士の比較とソート）： quantity < reorder_point のように「列と列の比較」は、単純なインデックス単独での範囲絞り込みが効かない。そのため、テーブルへのランダムアクセスを無くす「カバリングインデックス」の導入や、根本的には「発注点割れフラグ」のようなカラムをテーブルに追加するといった一工夫が必要になる点が異なる。
