@@ -1,0 +1,28 @@
+EXPLAIN の3行それぞれで何が起きているかを説明してください。
+o (orders) テーブル:WHERE 句の絞り込み条件（order_date と status）に使えるインデックスがないため、8,000,000件に対するフルテーブルスキャン（type: ALL）が起きている。
+m (members) テーブル:o.member_id = m.id で結合しているが、駆動表となる orders の走査結果が多すぎるため、主キー（PRIMARY）があるにもかかわらずインデックスが有効に機能せず、500,000件のフルスキャン（type: ALL）と join buffer（メモリ上での結合処理）が発生している。
+oi (order_items) テーブル:結合条件である o.id = oi.order_id の order_id 列にインデックスが存在しないため、24,000,000件に対するフルテーブルスキャン（type: ALL）が起き、極めて重い結合負荷がかかっている。
+
+orders テーブルで Using temporary; Using filesort が発生している理由を説明してください。
+理由: WHERE 句でのデータ抽出順序と、ORDER BY 句で要求されているソート順序（o.order_date DESC, m.name）をインデックスだけで解決できないため。
+解説: インデックスが使えないため、条件に一致した大量のレコードを一度一時テーブル（Using temporary）にすべて書き出し、その後メモリまたはディスク上でソート処理（Using filesort）を実行せざるを得なくなっている。
+
+このクエリを改善するために追加すべきインデックスを3つ提案し、それぞれの理由を説明してください。
+提案1: orders テーブルの (order_date, status, member_id) または (order_date, status) への複合インデックス
+理由: WHERE 句の期間・ステータス検索を高速な範囲スキャン（range）に落とし込み、800万件からの絞り込みを瞬時に終わらせるため。
+提案2: order_items テーブルの order_id へのインデックス
+理由: orders と order_items を結合する際の、2,400万件側のフルテーブルスキャンを回避し、注文IDに紐づく明細（平均3件）をピンポイントで高速に引き出すため。
+提案3: orders テーブルの member_id へのインデックス（または既存の PRIMARY 活用最適化）
+理由: 今回のクエリでは members の主キー id を使った1件ずつの等価検索。
+
+改善するためのDDL（CREATE INDEX 文）をすべて記述してください。
+-- 1. ordersの検索条件を最適化する複合インデックス
+CREATE INDEX idx_order_date_status ON orders (order_date, status, member_id);
+
+-- 2. order_itemsの結合キーに対するインデックス
+CREATE INDEX idx_order_id ON order_items (order_id);
+
+インデックス追加後の EXPLAIN で各テーブルの type がどの値に改善するかを予測してください。
+o (orders): ALL ➡ rangeidx_order_date_status を使い、指定期間（1ヶ月分）のデータだけを範囲走査するようになる。
+m (members): ALL ➡ eq_reforders から抽出された各 member_id に対し、members テーブルの主キー（PRIMARY）を使って1件ずつピンポイントに超高速結合するようになる（rows は 1 になる。
+oi (order_items): ALL ➡ refidx_order_id インデックスが適用され、各注文に紐づく平均3件の明細レコードだけを効率的にスキャンして結合。
